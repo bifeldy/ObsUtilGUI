@@ -49,10 +49,7 @@ namespace ObsUtilGUI {
                 TransferStatus transferStatus = pgrss.Item2;
 
                 string transferSpeed = $"{(transferStatus.InstantaneousSpeed / 1000):0.00} KB/s";
-
-                decimal transferredBytes = transferStatus.TransferredBytes;
-                decimal totalBytes = transferStatus.TotalBytes;
-                decimal transferPercentage = decimal.Parse($"{(transferredBytes / totalBytes * 100):0.00}");
+                decimal transferPercentage = transferStatus.TransferPercentage;
 
                 dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_Progress"].Index].Value = transferPercentage;
                 dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_Speed"].Index].Value = transferSpeed;
