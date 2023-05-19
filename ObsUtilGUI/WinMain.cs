@@ -671,7 +671,7 @@ namespace ObsUtilGUI {
                             if (!File.Exists(targetPathLocal)) {
                                 response.WriteResponseStreamToFile(targetPathLocal);
                             }
-                            onStopProgress.Report((dgvr, (int)response.StatusCode));
+                            onStopProgress.Report((dgvr, (int) response.StatusCode));
                         }
                     });
 
@@ -713,6 +713,8 @@ namespace ObsUtilGUI {
                         await ViewRemoteDir();
                     }
                     else {
+
+                        // TODO ::
                         MessageBox.Show("SDK's Feature Not Available", "Delete", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
@@ -725,10 +727,11 @@ namespace ObsUtilGUI {
                 DialogInput.ShowInputDialog(ref fileName, "Move / Rename");
                 if (string.IsNullOrEmpty(fileName)) {
                     MessageBox.Show("Path File Cannot Is Empty", "Move / Rename", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
                 }
-                else {
-                    MessageBox.Show("SDK's Feature Not Available", "Move / Rename", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+
+                // TODO ::
+                MessageBox.Show("SDK's Feature Not Available", "Move / Rename", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -738,33 +741,37 @@ namespace ObsUtilGUI {
                 DialogInput.ShowInputDialog(ref folderName, "New Folder");
                 if (string.IsNullOrEmpty(folderName)) {
                     MessageBox.Show("Folder Name Cannot Is Empty", "New Folder", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
                 }
-                else {
-                    string targetBucket = oldTxtRemoteDirText.Split('/').First();
-                    string targetPath = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), $"{folderName}/").Replace("\\", "/");
 
-                    await Task.Run(() => {
-                        PutObjectRequest request = new PutObjectRequest() {
-                            BucketName = targetBucket,
-                            ObjectKey = targetPath
-                        };
-                        PutObjectResponse response = obsClient.PutObject(request);
-                    });
+                string targetBucket = oldTxtRemoteDirText.Split('/').First();
+                string targetPath = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), $"{folderName}/").Replace("\\", "/");
 
-                    await LoadRemoteDir();
-                    await ViewRemoteDir();
-                }
+                await Task.Run(() => {
+                    PutObjectRequest request = new PutObjectRequest() {
+                        BucketName = targetBucket,
+                        ObjectKey = targetPath
+                    };
+                    PutObjectResponse response = obsClient.PutObject(request);
+                });
+
+                await LoadRemoteDir();
+                await ViewRemoteDir();
             }
         }
 
         private void dgOnProgress_CellContentClick(object sender, DataGridViewCellEventArgs e) {
             if (e.ColumnIndex == dgOnProgress.Columns["dgOnProgress_Cancel"].Index) {
+
+                // TODO ::
                 MessageBox.Show("SDK's Feature Not Available", "Cancel Upload / Download", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void dgErrorFail_CellContentClick(object sender, DataGridViewCellEventArgs e) {
             if (e.ColumnIndex == dgOnProgress.Columns["dgErrorFail_Retry"].Index) {
+
+                // TODO ::
                 MessageBox.Show("SDK's Feature Not Available", "Retry Upload / Download", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
