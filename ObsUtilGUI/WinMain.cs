@@ -10,6 +10,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Web;
 using System.Windows.Forms;
 
 using OBS;
@@ -584,8 +585,14 @@ namespace ObsUtilGUI {
                 string targetBucket = oldTxtRemoteDirText.Split('/').First();
                 string targetPathRemote = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), selectedLocalPath.Replace("\\", "/").Split('/').Last()).Replace("\\", "/");
 
-                string selectedName = selectedLocalPath.Replace("\\", "/").Split('/').Reverse().First();
-                DialogResult dialogResult = DialogResult.Yes;
+                string allowedMime = ConfigurationManager.AppSettings["local_allowed_file_mime"] ?? string.Empty;
+                if (!string.IsNullOrEmpty(allowedMime)) {
+                    string selectedMime = MimeMapping.GetMimeMapping(selectedLocalPath);
+                    if (selectedMime != allowedMime) {
+                        MessageBox.Show("File Rejected", "Wrong MiMe Type", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                }
 
                 string[] dirPath = oldTxtRemoteDirText.Split('/');
                 var ptr = remoteDirTree[dirPath[0]];
@@ -595,6 +602,8 @@ namespace ObsUtilGUI {
                     }
                 }
 
+                DialogResult dialogResult = DialogResult.Yes;
+                string selectedName = selectedLocalPath.Replace("\\", "/").Split('/').Reverse().First();
                 if (ptr.ContainsKey(selectedName)) {
                     dialogResult = MessageBox.Show($"Replace '{selectedName}'", "File Already Exist", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 }
@@ -639,9 +648,8 @@ namespace ObsUtilGUI {
                 string targetPathRemote = $"{string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1))}/{selectedRemotePath.Split('/').Last()}";
                 string targetPathLocal = Path.Combine(oldTxtLocalDirText, targetPathRemote.Split('/').Reverse().First());
 
-                string selectedName = selectedRemotePath.Split('/').Reverse().First();
                 DialogResult dialogResult = DialogResult.Yes;
-
+                string selectedName = selectedRemotePath.Split('/').Reverse().First();
                 if (File.Exists(targetPathLocal)) {
                     dialogResult = MessageBox.Show($"Replace '{selectedName}'", "File Already Exist", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 }
