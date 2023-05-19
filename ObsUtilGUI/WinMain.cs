@@ -256,6 +256,7 @@ namespace ObsUtilGUI {
                 }
             }
             oldTxtLocalDirText = txtLocalDir.Text;
+            btnUpload.Enabled = false;
         }
 
         private void LoadLocalDir() {
@@ -319,6 +320,7 @@ namespace ObsUtilGUI {
             string selectedName = Regex.Replace(e.Item.Text, @" \(\d+ bytes\)", string.Empty);
             string newSelectedName = Path.Combine(txtLocalDir.Text, selectedName);
             selectedLocalPath = (selectedLocalPath == newSelectedName) ? string.Empty : newSelectedName;
+            btnUpload.Enabled = !string.IsNullOrEmpty(selectedLocalPath);
         }
 
         private void lvLocalDir_MouseDoubleClick(object sender, MouseEventArgs e) {
@@ -355,8 +357,6 @@ namespace ObsUtilGUI {
             btnRemoteNewFolder.Enabled = !isBusy;
             btnRemoteMoveRename.Enabled = !isBusy;
             btnRemoteDelete.Enabled = !isBusy;
-            btnUpload.Enabled = !isBusy;
-            btnDownload.Enabled = !isBusy;
         }
 
         private void FilterRemoteDir() {
@@ -370,6 +370,7 @@ namespace ObsUtilGUI {
                 }
             }
             oldTxtRemoteDirText = txtRemoteDir.Text;
+            btnDownload.Enabled = false;
         }
 
         private async Task ViewRemoteDir(bool stopRecursive = false) {
@@ -531,6 +532,7 @@ namespace ObsUtilGUI {
             string selectedName = Regex.Replace(e.Item.Text, @" \(\d+ bytes\)", string.Empty);
             string newSelectedName = Path.Combine(txtRemoteDir.Text, selectedName).Replace("\\", "/");
             selectedRemotePath = (selectedRemotePath == newSelectedName) ? string.Empty : newSelectedName;
+            btnDownload.Enabled = !string.IsNullOrEmpty(selectedRemotePath);
         }
 
         private async void lvRemoteDir_MouseDoubleClick(object sender, MouseEventArgs e) {
@@ -581,33 +583,53 @@ namespace ObsUtilGUI {
             if (!string.IsNullOrEmpty(oldTxtRemoteDirText) && !string.IsNullOrEmpty(selectedLocalPath) && !selectedLocalPath.Contains("..") && localTypeIsFile) {
                 string targetBucket = oldTxtRemoteDirText.Split('/').First();
                 string targetPathRemote = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), selectedLocalPath.Replace("\\", "/").Split('/').Last()).Replace("\\", "/");
-                
-                int idx = dgOnProgress.Rows.Add(selectedLocalPath, "===>>>", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Uploading ...");
-                DataGridViewRow dgvr = dgOnProgress.Rows[idx];
 
-                await Task.Run(() => {
-                    PutObjectRequest request = new PutObjectRequest() {
-                        BucketName = targetBucket,
-                        ObjectKey = targetPathRemote,
-                        FilePath = selectedLocalPath,
-                        UploadProgress = (sndr, evnt) => {
-                            onGoingProgress.Report((dgvr, evnt));
-                        }
-                    };
+                string selectedName = selectedLocalPath.Replace("\\", "/").Split('/').Reverse().First();
+                DialogResult dialogResult = DialogResult.Yes;
 
-                    // dynamic response = null;
-                    // response = obsClient.BeginPutObject(request, (ar) => {
-                    //     if (ar.IsCompleted) {
-                    //         obsClient.EndPutObject(response);
-                    //         onCompleteProgress.Report((rowMonitorProgress, 200));
-                    //     }
-                    //     else {
-                    //         onCompleteProgress.Report((rowMonitorProgress, 400));
-                    //     }
-                    // }, null);
-                    PutObjectResponse response = obsClient.PutObject(request);
-                    onStopProgress.Report((dgvr, (int) response.StatusCode));
-                });
+                string[] dirPath = oldTxtRemoteDirText.Split('/');
+                var ptr = remoteDirTree[dirPath[0]];
+                for (int i = 1; i < dirPath.Length; i++) {
+                    if (ptr.ContainsKey(dirPath[i])) {
+                        ptr = ptr[dirPath[i]];
+                    }
+                }
+
+                if (ptr.ContainsKey(selectedName)) {
+                    dialogResult = MessageBox.Show($"Replace '{selectedName}'", "File Already Exist", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                }
+
+                if (dialogResult == DialogResult.Yes) {
+
+                    int idx = dgOnProgress.Rows.Add(selectedLocalPath, "===>>>", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Uploading ...");
+                    DataGridViewRow dgvr = dgOnProgress.Rows[idx];
+
+                    await Task.Run(() => {
+                        PutObjectRequest request = new PutObjectRequest() {
+                            BucketName = targetBucket,
+                            ObjectKey = targetPathRemote,
+                            FilePath = selectedLocalPath,
+                            UploadProgress = (sndr, evnt) => {
+                                onGoingProgress.Report((dgvr, evnt));
+                            }
+                        };
+
+                        // dynamic response = null;
+                        // response = obsClient.BeginPutObject(request, (ar) => {
+                        //     if (ar.IsCompleted) {
+                        //         obsClient.EndPutObject(response);
+                        //         onCompleteProgress.Report((rowMonitorProgress, 200));
+                        //     }
+                        //     else {
+                        //         onCompleteProgress.Report((rowMonitorProgress, 400));
+                        //     }
+                        // }, null);
+
+                        PutObjectResponse response = obsClient.PutObject(request);
+                        onStopProgress.Report((dgvr, (int) response.StatusCode));
+                    });
+
+                }
             }
         }
 
@@ -617,26 +639,37 @@ namespace ObsUtilGUI {
                 string targetPathRemote = $"{string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1))}/{selectedRemotePath.Split('/').Last()}";
                 string targetPathLocal = Path.Combine(oldTxtLocalDirText, targetPathRemote.Split('/').Reverse().First());
 
-                int idx = dgOnProgress.Rows.Add(targetPathLocal, "<<<===", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Downloading ...");
-                DataGridViewRow dgvr = dgOnProgress.Rows[idx];
+                string selectedName = selectedRemotePath.Split('/').Reverse().First();
+                DialogResult dialogResult = DialogResult.Yes;
 
-                await Task.Run(() => {
-                    GetObjectRequest request = new GetObjectRequest() {
-                        BucketName = targetBucket,
-                        ObjectKey = targetPathRemote,
-                        DownloadProgress = (sndr, evnt) => {
-                            onGoingProgress.Report((dgvr, evnt));
-                        }
-                    };
-                    using (GetObjectResponse response = obsClient.GetObject(request)) {
-                        if (!File.Exists(targetPathLocal)) {
-                            response.WriteResponseStreamToFile(targetPathLocal);
-                        }
-                        onStopProgress.Report((dgvr, (int) response.StatusCode));
-                    }
-                });
+                if (File.Exists(targetPathLocal)) {
+                    dialogResult = MessageBox.Show($"Replace '{selectedName}'", "File Already Exist", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                }
 
-                LoadLocalDir();
+                if (dialogResult == DialogResult.Yes) {
+
+                    int idx = dgOnProgress.Rows.Add(targetPathLocal, "<<<===", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Downloading ...");
+                    DataGridViewRow dgvr = dgOnProgress.Rows[idx];
+
+                    await Task.Run(() => {
+                        GetObjectRequest request = new GetObjectRequest() {
+                            BucketName = targetBucket,
+                            ObjectKey = targetPathRemote,
+                            DownloadProgress = (sndr, evnt) => {
+                                onGoingProgress.Report((dgvr, evnt));
+                            }
+                        };
+                        using (GetObjectResponse response = obsClient.GetObject(request)) {
+                            if (!File.Exists(targetPathLocal)) {
+                                response.WriteResponseStreamToFile(targetPathLocal);
+                            }
+                            onStopProgress.Report((dgvr, (int)response.StatusCode));
+                        }
+                    });
+
+                    LoadLocalDir();
+
+                }
             }
         }
 
