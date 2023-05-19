@@ -33,8 +33,8 @@ namespace ObsUtilGUI {
         string oldTxtRemoteDirText = string.Empty;
         IDictionary<string, dynamic> remoteDirTree = new Dictionary<string, dynamic>();
 
-        IProgress<(int, TransferStatus)> onGoingProgress = null;
-        IProgress<(int, int)> onCompleteProgress = null;
+        IProgress<(DataGridViewRow, TransferStatus)> onGoingProgress = null;
+        IProgress<(DataGridViewRow, int)> onStopProgress = null;
 
         public WinMain() {
             InitializeComponent();
@@ -44,42 +44,42 @@ namespace ObsUtilGUI {
         private void WinMain_Load(object sender, EventArgs e) {
             txtLocalDir.Text = Application.StartupPath;
 
-            onGoingProgress = new Progress<(int, TransferStatus)>(pgrss => {
-                int rowNum = pgrss.Item1;
-                TransferStatus transferStatus = pgrss.Item2;
+            onGoingProgress = new Progress<(DataGridViewRow, TransferStatus)>(obj => {
+                DataGridViewRow dgvr = obj.Item1;
+                TransferStatus transferStatus = obj.Item2;
 
                 string transferSpeed = $"{(transferStatus.InstantaneousSpeed / 1000):0.00} KB/s";
                 decimal transferPercentage = transferStatus.TransferPercentage;
 
-                dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_Progress"].Index].Value = transferPercentage;
-                dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_Speed"].Index].Value = transferSpeed;
+                dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Progress"].Index].Value = transferPercentage;
+                dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Speed"].Index].Value = transferSpeed;
 
                 ClearDataGridSelection();
             });
 
-            onCompleteProgress = new Progress<(int, int)>(async pgrss => {
-                int rowNum = pgrss.Item1;
-                int statusCode = pgrss.Item2;
+            onStopProgress = new Progress<(DataGridViewRow, int)>(async obj => {
+                DataGridViewRow dgvr = obj.Item1;
+                int statusCode = obj.Item2;
 
                 if (statusCode >= 200 && statusCode < 300) {
                     dgSuccess.Rows.Add(
-                        dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_FileLocal"].Index].Value,
-                        dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_Direction"].Index].Value,
-                        dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_FileRemote"].Index].Value,
-                        dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_Progress"].Index].Value,
+                        dgvr.Cells[dgOnProgress.Columns["dgOnProgress_FileLocal"].Index].Value,
+                        dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Direction"].Index].Value,
+                        dgvr.Cells[dgOnProgress.Columns["dgOnProgress_FileRemote"].Index].Value,
+                        dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Progress"].Index].Value,
                         "Completed ..."
                     );
-                    dgOnProgress.Rows.RemoveAt(rowNum);
+                    dgOnProgress.Rows.Remove(dgvr);
                 }
                 else {
                     dgErrorFail.Rows.Add(
-                        dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_FileLocal"].Index].Value,
-                        dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_Direction"].Index].Value,
-                        dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_FileRemote"].Index].Value,
-                        dgOnProgress.Rows[rowNum].Cells[dgOnProgress.Columns["dgOnProgress_Progress"].Index].Value,
+                        dgvr.Cells[dgOnProgress.Columns["dgOnProgress_FileLocal"].Index].Value,
+                        dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Direction"].Index].Value,
+                        dgvr.Cells[dgOnProgress.Columns["dgOnProgress_FileRemote"].Index].Value,
+                        dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Progress"].Index].Value,
                         "Error Failed ..."
                     );
-                    dgOnProgress.Rows.RemoveAt(rowNum);
+                    dgOnProgress.Rows.Remove(dgvr);
                 }
 
                 await LoadRemoteDir();
@@ -414,12 +414,9 @@ namespace ObsUtilGUI {
         }
 
         private async Task LoadRemoteDir() {
-            DateTime timeStamp = DateTime.Now;
-            lblDate.Text = $"{timeStamp:dd-MM-yyyy}";
-            lblTime.Text = $"{timeStamp:HH:mm:ss}";
             try {
+                SetBusy(true);
                 if (string.IsNullOrEmpty(txtRemoteDir.Text)) {
-                    SetBusy(true);
                     ilRemoteDir.Images.Clear();
                     ilRemoteDir.Images.Add(DefaultIcons.FolderLarge);
                     ilRemoteDirTemp.Clear();
@@ -443,11 +440,9 @@ namespace ObsUtilGUI {
                     foreach (Icon ico in ilRemoteDirTemp) {
                         ilRemoteDir.Images.Add(DefaultIcons.FolderLarge);
                     }
-                    SetBusy(false);
                     FilterRemoteDir();
                 }
                 else {
-                    SetBusy(true);
                     await Task.Run(() => {
                         try {
                             ListObjectsRequest request = new ListObjectsRequest() {
@@ -472,8 +467,11 @@ namespace ObsUtilGUI {
                             MessageBox.Show(ex.Message, "List All Objects In Folder", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                     });
-                    SetBusy(false);
                 }
+                DateTime timeStamp = DateTime.Now;
+                lblDate.Text = $"{timeStamp:dd-MM-yyyy}";
+                lblTime.Text = $"{timeStamp:HH:mm:ss}";
+                SetBusy(false);
             }
             catch (Exception ex) {
                 MessageBox.Show(ex.Message, "Remote Path Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -584,18 +582,16 @@ namespace ObsUtilGUI {
                 string targetBucket = oldTxtRemoteDirText.Split('/').First();
                 string targetPathRemote = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), selectedLocalPath.Replace("\\", "/").Split('/').Last()).Replace("\\", "/");
                 
-                dgOnProgress.Rows.Add(selectedLocalPath, "===>>>", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Uploading ...");
-                int currentRow = dgOnProgress.Rows.Count;
+                int idx = dgOnProgress.Rows.Add(selectedLocalPath, "===>>>", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Uploading ...");
+                DataGridViewRow dgvr = dgOnProgress.Rows[idx];
 
                 await Task.Run(() => {
-                    int rowMonitorProgress = currentRow - 1;
-
                     PutObjectRequest request = new PutObjectRequest() {
                         BucketName = targetBucket,
                         ObjectKey = targetPathRemote,
                         FilePath = selectedLocalPath,
                         UploadProgress = (sndr, evnt) => {
-                            onGoingProgress.Report((rowMonitorProgress, evnt));
+                            onGoingProgress.Report((dgvr, evnt));
                         }
                     };
 
@@ -610,7 +606,7 @@ namespace ObsUtilGUI {
                     //     }
                     // }, null);
                     PutObjectResponse response = obsClient.PutObject(request);
-                    onCompleteProgress.Report((rowMonitorProgress, (int) response.StatusCode));
+                    onStopProgress.Report((dgvr, (int) response.StatusCode));
                 });
             }
         }
@@ -621,24 +617,22 @@ namespace ObsUtilGUI {
                 string targetPathRemote = $"{string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1))}/{selectedRemotePath.Split('/').Last()}";
                 string targetPathLocal = Path.Combine(oldTxtLocalDirText, targetPathRemote.Split('/').Reverse().First());
 
-                dgOnProgress.Rows.Add(targetPathLocal, "<<<===", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Downloading ...");
-                int currentRow = dgOnProgress.Rows.Count;
+                int idx = dgOnProgress.Rows.Add(targetPathLocal, "<<<===", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Downloading ...");
+                DataGridViewRow dgvr = dgOnProgress.Rows[idx];
 
                 await Task.Run(() => {
-                    int rowMonitorProgress = currentRow - 1;
-
                     GetObjectRequest request = new GetObjectRequest() {
                         BucketName = targetBucket,
                         ObjectKey = targetPathRemote,
                         DownloadProgress = (sndr, evnt) => {
-                            onGoingProgress.Report((rowMonitorProgress, evnt));
+                            onGoingProgress.Report((dgvr, evnt));
                         }
                     };
                     using (GetObjectResponse response = obsClient.GetObject(request)) {
                         if (!File.Exists(targetPathLocal)) {
                             response.WriteResponseStreamToFile(targetPathLocal);
                         }
-                        onCompleteProgress.Report((rowMonitorProgress, (int) response.StatusCode));
+                        onStopProgress.Report((dgvr, (int) response.StatusCode));
                     }
                 });
 
@@ -649,7 +643,7 @@ namespace ObsUtilGUI {
         private async void btnRemoteDelete_Click(object sender, EventArgs e) {
             if (!string.IsNullOrEmpty(oldTxtRemoteDirText) && !string.IsNullOrEmpty(selectedRemotePath) && !selectedRemotePath.Contains("..")) {
                 string selectedName = selectedRemotePath.Split('/').Reverse().First();
-                DialogResult dialogResult = MessageBox.Show($"Are You Sure Want To Delete {selectedName}", "Delete File / Folder", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                DialogResult dialogResult = MessageBox.Show($"Are You Sure Want To Delete '{selectedName}'", "Delete File / Folder", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (dialogResult == DialogResult.Yes) {
                     string targetBucket = oldTxtRemoteDirText.Split('/').First();
                     string targetPath = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), selectedRemotePath.Split('/').Last()).Replace("\\", "/");
@@ -678,7 +672,7 @@ namespace ObsUtilGUI {
                         await ViewRemoteDir();
                     }
                     else {
-                        MessageBox.Show("SDK's Feature Not Available", "Delete Folder", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show("SDK's Feature Not Available", "Delete", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
             }

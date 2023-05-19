@@ -258,6 +258,7 @@ namespace ObsUtilGUI {
             // btnRemoteMoveRename
             // 
             this.btnRemoteMoveRename.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.btnRemoteMoveRename.Enabled = false;
             this.btnRemoteMoveRename.Location = new System.Drawing.Point(120, 3);
             this.btnRemoteMoveRename.Name = "btnRemoteMoveRename";
             this.btnRemoteMoveRename.Size = new System.Drawing.Size(111, 24);
@@ -269,6 +270,7 @@ namespace ObsUtilGUI {
             // btnRemoteNewFolder
             // 
             this.btnRemoteNewFolder.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.btnRemoteNewFolder.Enabled = false;
             this.btnRemoteNewFolder.Location = new System.Drawing.Point(237, 3);
             this.btnRemoteNewFolder.Name = "btnRemoteNewFolder";
             this.btnRemoteNewFolder.Size = new System.Drawing.Size(113, 24);
@@ -280,11 +282,12 @@ namespace ObsUtilGUI {
             // btnRemoteDelete
             // 
             this.btnRemoteDelete.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.btnRemoteDelete.Enabled = false;
             this.btnRemoteDelete.Location = new System.Drawing.Point(3, 3);
             this.btnRemoteDelete.Name = "btnRemoteDelete";
             this.btnRemoteDelete.Size = new System.Drawing.Size(111, 24);
             this.btnRemoteDelete.TabIndex = 3;
-            this.btnRemoteDelete.Text = "Delete File";
+            this.btnRemoteDelete.Text = "Delete";
             this.btnRemoteDelete.UseVisualStyleBackColor = true;
             this.btnRemoteDelete.Click += new System.EventHandler(this.btnRemoteDelete_Click);
             // 
@@ -306,6 +309,7 @@ namespace ObsUtilGUI {
             this.txtFilterRemoteDir.Dock = System.Windows.Forms.DockStyle.Fill;
             this.txtFilterRemoteDir.Location = new System.Drawing.Point(3, 3);
             this.txtFilterRemoteDir.Name = "txtFilterRemoteDir";
+            this.txtFilterRemoteDir.ReadOnly = true;
             this.txtFilterRemoteDir.Size = new System.Drawing.Size(349, 21);
             this.txtFilterRemoteDir.TabIndex = 0;
             this.txtFilterRemoteDir.TextChanged += new System.EventHandler(this.txtFilterRemoteDir_TextChanged);
@@ -352,6 +356,7 @@ namespace ObsUtilGUI {
             // btnRemoteDirRefresh
             // 
             this.btnRemoteDirRefresh.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.btnRemoteDirRefresh.Enabled = false;
             this.btnRemoteDirRefresh.Location = new System.Drawing.Point(275, 3);
             this.btnRemoteDirRefresh.Name = "btnRemoteDirRefresh";
             this.btnRemoteDirRefresh.Size = new System.Drawing.Size(75, 24);
@@ -365,6 +370,7 @@ namespace ObsUtilGUI {
             this.txtRemoteDir.Dock = System.Windows.Forms.DockStyle.Fill;
             this.txtRemoteDir.Location = new System.Drawing.Point(54, 3);
             this.txtRemoteDir.Name = "txtRemoteDir";
+            this.txtRemoteDir.ReadOnly = true;
             this.txtRemoteDir.Size = new System.Drawing.Size(215, 21);
             this.txtRemoteDir.TabIndex = 1;
             this.txtRemoteDir.Enter += new System.EventHandler(this.txtRemoteDir_Enter);
