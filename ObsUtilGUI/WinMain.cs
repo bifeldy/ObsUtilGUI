@@ -258,6 +258,7 @@ namespace ObsUtilGUI {
             }
             oldTxtLocalDirText = txtLocalDir.Text;
             btnUpload.Enabled = false;
+            selectedLocalPath = string.Empty;
         }
 
         private void LoadLocalDir() {
@@ -356,8 +357,10 @@ namespace ObsUtilGUI {
             txtFilterRemoteDir.ReadOnly = isBusy;
             lvRemoteDir.Enabled = !isBusy;
             btnRemoteNewFolder.Enabled = !isBusy;
-            btnRemoteMoveRename.Enabled = !isBusy;
-            btnRemoteDelete.Enabled = !isBusy;
+            btnUpload.Enabled = !isBusy && !string.IsNullOrEmpty(selectedLocalPath);
+            btnDownload.Enabled = !isBusy && !string.IsNullOrEmpty(selectedRemotePath);
+            btnRemoteMoveRename.Enabled = !isBusy && !string.IsNullOrEmpty(selectedRemotePath);
+            btnRemoteDelete.Enabled = !isBusy && !string.IsNullOrEmpty(selectedRemotePath);
         }
 
         private void FilterRemoteDir() {
@@ -372,6 +375,9 @@ namespace ObsUtilGUI {
             }
             oldTxtRemoteDirText = txtRemoteDir.Text;
             btnDownload.Enabled = false;
+            btnRemoteDelete.Enabled = false;
+            btnRemoteMoveRename.Enabled = false;
+            selectedRemotePath = string.Empty;
         }
 
         private async Task ViewRemoteDir(bool stopRecursive = false) {
@@ -534,6 +540,8 @@ namespace ObsUtilGUI {
             string newSelectedName = Path.Combine(txtRemoteDir.Text, selectedName).Replace("\\", "/");
             selectedRemotePath = (selectedRemotePath == newSelectedName) ? string.Empty : newSelectedName;
             btnDownload.Enabled = !string.IsNullOrEmpty(selectedRemotePath);
+            btnRemoteDelete.Enabled = !string.IsNullOrEmpty(selectedRemotePath);
+            btnRemoteMoveRename.Enabled = !string.IsNullOrEmpty(selectedRemotePath);
         }
 
         private async void lvRemoteDir_MouseDoubleClick(object sender, MouseEventArgs e) {
