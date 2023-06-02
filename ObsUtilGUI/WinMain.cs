@@ -1,18 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Configuration;
-using System.Data;
-using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Web;
 using System.Windows.Forms;
-
+using Microsoft.Win32;
 using OBS;
 using OBS.Model;
 
@@ -34,8 +29,18 @@ namespace ObsUtilGUI {
         string oldTxtRemoteDirText = string.Empty;
         IDictionary<string, dynamic> remoteDirTree = new Dictionary<string, dynamic>();
 
-        IProgress<(DataGridViewRow, TransferStatus)> onGoingProgress = null;
-        IProgress<(DataGridViewRow, int)> onStopProgress = null;
+        IProgress<Tuple<DataGridViewRow, TransferStatus>> onGoingProgress = null;
+        IProgress<Tuple<DataGridViewRow, int>> onStopProgress = null;
+
+        string GetMimeType(string fullPath) {
+            string mimeType = "application/unknown";
+            string ext = Path.GetExtension(fullPath).ToLower();
+            RegistryKey regKey = Registry.ClassesRoot.OpenSubKey(ext);
+            if (regKey != null && regKey.GetValue("Content Type") != null) {
+                mimeType = regKey.GetValue("Content Type").ToString();
+            }
+            return mimeType;
+        }
 
         public WinMain() {
             InitializeComponent();
@@ -45,7 +50,7 @@ namespace ObsUtilGUI {
         private void WinMain_Load(object sender, EventArgs e) {
             txtLocalDir.Text = Application.StartupPath;
 
-            onGoingProgress = new Progress<(DataGridViewRow, TransferStatus)>(obj => {
+            onGoingProgress = new Progress<Tuple<DataGridViewRow, TransferStatus>>(obj => {
                 DataGridViewRow dgvr = obj.Item1;
                 TransferStatus transferStatus = obj.Item2;
 
@@ -58,7 +63,7 @@ namespace ObsUtilGUI {
                 ClearDataGridSelection();
             });
 
-            onStopProgress = new Progress<(DataGridViewRow, int)>(async obj => {
+            onStopProgress = new Progress<Tuple<DataGridViewRow, int>>(async obj => {
                 DataGridViewRow dgvr = obj.Item1;
                 int statusCode = obj.Item2;
 
@@ -429,7 +434,7 @@ namespace ObsUtilGUI {
                     ilRemoteDir.Images.Add(DefaultIcons.FolderLarge);
                     ilRemoteDirTemp.Clear();
                     allRemotePath.Clear();
-                    await Task.Run(() => {
+                    await Task.Factory.StartNew(() => {
                         try {
                             ListBucketsRequest request = new ListBucketsRequest();
                             ListBucketsResponse response = obsClient.ListBuckets(request);
@@ -451,7 +456,7 @@ namespace ObsUtilGUI {
                     FilterRemoteDir();
                 }
                 else {
-                    await Task.Run(() => {
+                    await Task.Factory.StartNew(() => {
                         try {
                             ListObjectsRequest request = new ListObjectsRequest() {
                                 BucketName = txtRemoteDir.Text.Split('/').First()
@@ -595,7 +600,7 @@ namespace ObsUtilGUI {
 
                 string allowedMime = ConfigurationManager.AppSettings["local_allowed_file_mime"] ?? string.Empty;
                 if (!string.IsNullOrEmpty(allowedMime)) {
-                    string selectedMime = MimeMapping.GetMimeMapping(selectedLocalPath);
+                    string selectedMime = GetMimeType(selectedLocalPath);
                     if (selectedMime != allowedMime) {
                         MessageBox.Show("File Rejected", "Wrong MiMe Type", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
@@ -621,13 +626,13 @@ namespace ObsUtilGUI {
                     int idx = dgOnProgress.Rows.Add(selectedLocalPath, "===>>>", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Uploading ...");
                     DataGridViewRow dgvr = dgOnProgress.Rows[idx];
 
-                    await Task.Run(() => {
+                    await Task.Factory.StartNew(() => {
                         PutObjectRequest request = new PutObjectRequest() {
                             BucketName = targetBucket,
                             ObjectKey = targetPathRemote,
                             FilePath = selectedLocalPath,
                             UploadProgress = (sndr, evnt) => {
-                                onGoingProgress.Report((dgvr, evnt));
+                                onGoingProgress.Report(Tuple.Create(dgvr, evnt));
                             }
                         };
 
@@ -643,7 +648,7 @@ namespace ObsUtilGUI {
                         // }, null);
 
                         PutObjectResponse response = obsClient.PutObject(request);
-                        onStopProgress.Report((dgvr, (int) response.StatusCode));
+                        onStopProgress.Report(Tuple.Create(dgvr, (int) response.StatusCode));
                     });
 
                 }
@@ -667,19 +672,19 @@ namespace ObsUtilGUI {
                     int idx = dgOnProgress.Rows.Add(targetPathLocal, "<<<===", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Downloading ...");
                     DataGridViewRow dgvr = dgOnProgress.Rows[idx];
 
-                    await Task.Run(() => {
+                    await Task.Factory.StartNew(() => {
                         GetObjectRequest request = new GetObjectRequest() {
                             BucketName = targetBucket,
                             ObjectKey = targetPathRemote,
                             DownloadProgress = (sndr, evnt) => {
-                                onGoingProgress.Report((dgvr, evnt));
+                                onGoingProgress.Report(Tuple.Create(dgvr, evnt));
                             }
                         };
                         using (GetObjectResponse response = obsClient.GetObject(request)) {
                             if (!File.Exists(targetPathLocal)) {
                                 response.WriteResponseStreamToFile(targetPathLocal);
                             }
-                            onStopProgress.Report((dgvr, (int) response.StatusCode));
+                            onStopProgress.Report(Tuple.Create(dgvr, (int) response.StatusCode));
                         }
                     });
 
@@ -698,7 +703,7 @@ namespace ObsUtilGUI {
                     string targetPath = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), selectedRemotePath.Split('/').Last()).Replace("\\", "/");
 
                     if (remoteTypeIsFile) {
-                        await Task.Run(() => {
+                        await Task.Factory.StartNew(() => {
                             DeleteObjectRequest request = new DeleteObjectRequest() {
                                 BucketName = targetBucket,
                                 ObjectKey = $"{targetPath}{(remoteTypeIsFile ? "" : "/")}"
@@ -755,7 +760,7 @@ namespace ObsUtilGUI {
                 string targetBucket = oldTxtRemoteDirText.Split('/').First();
                 string targetPath = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), $"{folderName}/").Replace("\\", "/");
 
-                await Task.Run(() => {
+                await Task.Factory.StartNew(() => {
                     PutObjectRequest request = new PutObjectRequest() {
                         BucketName = targetBucket,
                         ObjectKey = targetPath
