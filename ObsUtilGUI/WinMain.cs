@@ -2,12 +2,14 @@
 using System.Collections.Generic;
 using System.Configuration;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Microsoft.Win32;
+
 using OBS;
 using OBS.Model;
 
@@ -29,17 +31,53 @@ namespace ObsUtilGUI {
         string oldTxtRemoteDirText = string.Empty;
         IDictionary<string, dynamic> remoteDirTree = new Dictionary<string, dynamic>();
 
+        IProgress<Tuple<DataGridViewRow, string>> onGoingStatus = null;
         IProgress<Tuple<DataGridViewRow, TransferStatus>> onGoingProgress = null;
         IProgress<Tuple<DataGridViewRow, int>> onStopProgress = null;
 
-        string GetMimeType(string fullPath) {
-            string mimeType = "application/unknown";
-            string ext = Path.GetExtension(fullPath).ToLower();
-            RegistryKey regKey = Registry.ClassesRoot.OpenSubKey(ext);
-            if (regKey != null && regKey.GetValue("Content Type") != null) {
-                mimeType = regKey.GetValue("Content Type").ToString();
+        [DllImport("urlmon.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = false)]
+        private static extern int FindMimeFromData(
+            IntPtr pBC,
+            [MarshalAs(UnmanagedType.LPWStr)] string pwzUrl,
+            [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.I1, SizeParamIndex = 3)] byte[] pBuffer,
+            int cbSize,
+            [MarshalAs(UnmanagedType.LPWStr)] string pwzMimeProposed,
+            int dwMimeFlags,
+            out IntPtr ppwzMimeOut,
+            int dwReserved
+        );
+
+        public static string GetMimeFromFile(string filename) {
+            if (!File.Exists(filename)) {
+                throw new FileNotFoundException(filename + " Not Found");
             }
-            return mimeType;
+            const int maxContent = 256;
+            var buffer = new byte[maxContent];
+            using (var fs = new FileStream(filename, FileMode.Open)) {
+                if (fs.Length >= maxContent) {
+                    fs.Read(buffer, 0, maxContent);
+                }
+                else {
+                    fs.Read(buffer, 0, (int)fs.Length);
+                }
+            }
+            IntPtr mimeTypePtr = IntPtr.Zero;
+            try {
+                var result = FindMimeFromData(IntPtr.Zero, null, buffer, maxContent, null, 0, out mimeTypePtr, 0);
+                if (result != 0) {
+                    Marshal.FreeCoTaskMem(mimeTypePtr);
+                    throw Marshal.GetExceptionForHR(result);
+                }
+                var mime = Marshal.PtrToStringUni(mimeTypePtr);
+                Marshal.FreeCoTaskMem(mimeTypePtr);
+                return mime;
+            }
+            catch {
+                if (mimeTypePtr != IntPtr.Zero) {
+                    Marshal.FreeCoTaskMem(mimeTypePtr);
+                }
+                return "unknown/unknown";
+            }
         }
 
         public WinMain() {
@@ -49,6 +87,15 @@ namespace ObsUtilGUI {
 
         private void WinMain_Load(object sender, EventArgs e) {
             txtLocalDir.Text = Application.StartupPath;
+
+            onGoingStatus = new Progress<Tuple<DataGridViewRow, string>>(obj => {
+                DataGridViewRow dgvr = obj.Item1;
+                string status = obj.Item2;
+
+                dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Status"].Index].Value = status;
+
+                ClearDataGridSelection();
+            });
 
             onGoingProgress = new Progress<Tuple<DataGridViewRow, TransferStatus>>(obj => {
                 DataGridViewRow dgvr = obj.Item1;
@@ -83,7 +130,7 @@ namespace ObsUtilGUI {
                         dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Direction"].Index].Value,
                         dgvr.Cells[dgOnProgress.Columns["dgOnProgress_FileRemote"].Index].Value,
                         dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Progress"].Index].Value,
-                        "Error Failed ..."
+                        "Failed ..."
                     );
                     dgOnProgress.Rows.Remove(dgvr);
                 }
@@ -593,104 +640,181 @@ namespace ObsUtilGUI {
             dgErrorFail.ClearSelection();
         }
 
-        private async void btnUpload_Click(object sender, EventArgs e) {
-            if (!string.IsNullOrEmpty(oldTxtRemoteDirText) && !string.IsNullOrEmpty(selectedLocalPath) && !selectedLocalPath.Contains("..") && localTypeIsFile) {
-                string targetBucket = oldTxtRemoteDirText.Split('/').First();
-                string targetPathRemote = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), selectedLocalPath.Replace("\\", "/").Split('/').Last()).Replace("\\", "/");
+        private bool checkProgressIsRunning(string localPath, string remotePath) {
+            foreach (DataGridViewRow row in dgOnProgress.Rows) {
+                if (
+                    row.Cells[dgOnProgress.Columns["dgOnProgress_FileLocal"].Index].Value.ToString().Equals(localPath) &&
+                    row.Cells[dgOnProgress.Columns["dgOnProgress_FileRemote"].Index].Value.ToString().Equals(remotePath)
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        }
 
-                string allowedMime = ConfigurationManager.AppSettings["local_allowed_file_mime"] ?? string.Empty;
-                if (!string.IsNullOrEmpty(allowedMime)) {
-                    string selectedMime = GetMimeType(selectedLocalPath);
-                    if (selectedMime != allowedMime) {
-                        MessageBox.Show("File Rejected", "Wrong MiMe Type", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        private async void btnUpload_Click(object sender, EventArgs e) {
+            try {
+                if (!string.IsNullOrEmpty(oldTxtRemoteDirText) && !string.IsNullOrEmpty(selectedLocalPath) && !selectedLocalPath.Contains("..") && localTypeIsFile) {
+                    string targetBucket = oldTxtRemoteDirText.Split('/').First();
+                    string targetPathRemote = Path.Combine(string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1)), selectedLocalPath.Replace("\\", "/").Split('/').Last()).Replace("\\", "/");
+
+                    if (checkProgressIsRunning(selectedLocalPath, $"OBS://{targetBucket}/{targetPathRemote}")) {
+                        MessageBox.Show("Progress Already Running", "On-Going Added", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
-                }
 
-                string[] dirPath = oldTxtRemoteDirText.Split('/');
-                var ptr = remoteDirTree[dirPath[0]];
-                for (int i = 1; i < dirPath.Length; i++) {
-                    if (ptr.ContainsKey(dirPath[i])) {
-                        ptr = ptr[dirPath[i]];
+                    string allowedMime = ConfigurationManager.AppSettings["local_allowed_file_mime"] ?? string.Empty;
+                    if (!string.IsNullOrEmpty(allowedMime)) {
+                        string selectedMime = GetMimeFromFile(selectedLocalPath);
+                        if (selectedMime != allowedMime) {
+                            MessageBox.Show("Wrong MiMe Type", "File Rejected", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+                    }
+
+                    string signFull = ConfigurationManager.AppSettings["local_allowed_file_sign"] ?? string.Empty;
+                    if (!string.IsNullOrEmpty(signFull)) {
+                        FileInfo fi = new FileInfo(selectedLocalPath);
+                        string[] signSplit = signFull.Split(' ');
+                        int minFileSize = signSplit.Length;
+                        if (fi.Length < minFileSize) {
+                            MessageBox.Show("Invalid File Size", "File Rejected", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+
+                        try {
+                            int[] intList = new int[minFileSize];
+                            for (int i = 0; i < intList.Length; i++) {
+                                if (signSplit[i] == "??") {
+                                    intList[i] = -1;
+                                }
+                                else {
+                                    intList[i] = int.Parse(signSplit[i], NumberStyles.HexNumber);
+                                }
+                            }
+                            using (BinaryReader reader = new BinaryReader(new FileStream(selectedLocalPath, FileMode.Open))) {
+                                bool valid = false;
+                                byte[] buff = new byte[minFileSize];
+                                reader.BaseStream.Seek(0, SeekOrigin.Begin);
+                                reader.Read(buff, 0, buff.Length);
+                                for (int a = 0; a < buff.Length; a++) {
+                                    for (int b = 0; b < intList.Length; b++) {
+                                        if (intList[b] != -1 && intList[b] != buff[a + b]) {
+                                            break;
+                                        }
+                                        if (b + 1 == intList.Length) {
+                                            valid = true;
+                                        }
+                                    }
+                                }
+                                if (!valid) {
+                                    throw new Exception("Signature Verification Failed");
+                                }
+                            }
+                        }
+                        catch (Exception ex) {
+                            MessageBox.Show(ex.Message, "File Rejected", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+                    }
+
+                    string[] dirPath = oldTxtRemoteDirText.Split('/');
+                    var ptr = remoteDirTree[dirPath[0]];
+                    for (int i = 1; i < dirPath.Length; i++) {
+                        if (ptr.ContainsKey(dirPath[i])) {
+                            ptr = ptr[dirPath[i]];
+                        }
+                    }
+
+                    DialogResult dialogResult = DialogResult.Yes;
+                    string selectedName = selectedLocalPath.Replace("\\", "/").Split('/').Reverse().First();
+                    if (ptr.ContainsKey(selectedName)) {
+                        dialogResult = MessageBox.Show($"Replace '{selectedName}'", "File Already Exist", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    }
+
+                    if (dialogResult == DialogResult.Yes) {
+
+                        int idx = dgOnProgress.Rows.Add(selectedLocalPath, "===>>>", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Checking ...");
+                        DataGridViewRow dgvr = dgOnProgress.Rows[idx];
+
+                        await Task.Factory.StartNew(() => {
+                            try {
+                                UploadFileRequest request = new UploadFileRequest {
+                                    BucketName = targetBucket,
+                                    ObjectKey = targetPathRemote,
+                                    UploadFile = selectedLocalPath,
+                                    UploadPartSize = 10 * (long) Math.Pow(2, 20),
+                                    EnableCheckpoint = true,
+                                    EnableCheckSum = true,
+                                    UploadProgress = (sndr, evnt) => {
+                                        onGoingStatus.Report(Tuple.Create(dgvr, "Uploading ..."));
+                                        onGoingProgress.Report(Tuple.Create(dgvr, evnt));
+                                    }
+                                };
+
+                                CompleteMultipartUploadResponse response = obsClient.UploadFile(request);
+                                onStopProgress.Report(Tuple.Create(dgvr, (int) response.StatusCode));
+                            }
+                            catch (ObsException ex) {
+                                MessageBox.Show(ex.Message, "Upload Chunk Part", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            }
+                        });
+
                     }
                 }
-
-                DialogResult dialogResult = DialogResult.Yes;
-                string selectedName = selectedLocalPath.Replace("\\", "/").Split('/').Reverse().First();
-                if (ptr.ContainsKey(selectedName)) {
-                    dialogResult = MessageBox.Show($"Replace '{selectedName}'", "File Already Exist", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                }
-
-                if (dialogResult == DialogResult.Yes) {
-
-                    int idx = dgOnProgress.Rows.Add(selectedLocalPath, "===>>>", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Uploading ...");
-                    DataGridViewRow dgvr = dgOnProgress.Rows[idx];
-
-                    await Task.Factory.StartNew(() => {
-                        PutObjectRequest request = new PutObjectRequest() {
-                            BucketName = targetBucket,
-                            ObjectKey = targetPathRemote,
-                            FilePath = selectedLocalPath,
-                            UploadProgress = (sndr, evnt) => {
-                                onGoingProgress.Report(Tuple.Create(dgvr, evnt));
-                            }
-                        };
-
-                        // dynamic response = null;
-                        // response = obsClient.BeginPutObject(request, (ar) => {
-                        //     if (ar.IsCompleted) {
-                        //         obsClient.EndPutObject(response);
-                        //         onCompleteProgress.Report((rowMonitorProgress, 200));
-                        //     }
-                        //     else {
-                        //         onCompleteProgress.Report((rowMonitorProgress, 400));
-                        //     }
-                        // }, null);
-
-                        PutObjectResponse response = obsClient.PutObject(request);
-                        onStopProgress.Report(Tuple.Create(dgvr, (int) response.StatusCode));
-                    });
-
-                }
+            }
+            catch (Exception exception) {
+                MessageBox.Show(exception.Message, "Upload Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private async void btnDownload_Click(object sender, EventArgs e) {
-            if (!string.IsNullOrEmpty(oldTxtRemoteDirText) && !string.IsNullOrEmpty(selectedRemotePath) && !selectedRemotePath.Contains("..") && remoteTypeIsFile) {
-                string targetBucket = oldTxtRemoteDirText.Split('/').First();
-                string targetPathRemote = $"{string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1))}/{selectedRemotePath.Split('/').Last()}";
-                string targetPathLocal = Path.Combine(oldTxtLocalDirText, targetPathRemote.Split('/').Reverse().First());
+            try {
+                if (!string.IsNullOrEmpty(oldTxtRemoteDirText) && !string.IsNullOrEmpty(selectedRemotePath) && !selectedRemotePath.Contains("..") && remoteTypeIsFile) {
+                    string targetBucket = oldTxtRemoteDirText.Split('/').First();
+                    string targetPathRemote = $"{string.Join("/", oldTxtRemoteDirText.Split('/').Skip(1))}/{selectedRemotePath.Split('/').Last()}";
+                    string targetPathLocal = Path.Combine(oldTxtLocalDirText, targetPathRemote.Split('/').Reverse().First());
 
-                DialogResult dialogResult = DialogResult.Yes;
-                string selectedName = selectedRemotePath.Split('/').Reverse().First();
-                if (File.Exists(targetPathLocal)) {
-                    dialogResult = MessageBox.Show($"Replace '{selectedName}'", "File Already Exist", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                }
+                    if (checkProgressIsRunning(targetPathLocal, $"OBS://{targetBucket}/{targetPathRemote}")) {
+                        MessageBox.Show("Progress Already Running", "On-Going Added", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
 
-                if (dialogResult == DialogResult.Yes) {
+                    DialogResult dialogResult = DialogResult.Yes;
+                    string selectedName = selectedRemotePath.Split('/').Reverse().First();
+                    if (File.Exists(targetPathLocal)) {
+                        dialogResult = MessageBox.Show($"Replace '{selectedName}'", "File Already Exist", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    }
 
-                    int idx = dgOnProgress.Rows.Add(targetPathLocal, "<<<===", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Downloading ...");
-                    DataGridViewRow dgvr = dgOnProgress.Rows[idx];
+                    if (dialogResult == DialogResult.Yes) {
 
-                    await Task.Factory.StartNew(() => {
-                        GetObjectRequest request = new GetObjectRequest() {
-                            BucketName = targetBucket,
-                            ObjectKey = targetPathRemote,
-                            DownloadProgress = (sndr, evnt) => {
-                                onGoingProgress.Report(Tuple.Create(dgvr, evnt));
-                            }
-                        };
-                        using (GetObjectResponse response = obsClient.GetObject(request)) {
-                            if (!File.Exists(targetPathLocal)) {
-                                response.WriteResponseStreamToFile(targetPathLocal);
-                            }
+                        int idx = dgOnProgress.Rows.Add(targetPathLocal, "<<<===", $"OBS://{targetBucket}/{targetPathRemote}", 0, "0 B/s", "Checking ...");
+                        DataGridViewRow dgvr = dgOnProgress.Rows[idx];
+
+                        await Task.Factory.StartNew(() => {
+                            DownloadFileRequest request = new DownloadFileRequest {
+                                BucketName = targetBucket,
+                                ObjectKey = targetPathRemote,
+                                DownloadFile = targetPathLocal,
+                                DownloadPartSize = 10 * (long) Math.Pow(2, 20),
+                                EnableCheckpoint = true,
+                                DownloadProgress = (sndr, evnt) => {
+                                    onGoingStatus.Report(Tuple.Create(dgvr, "Downloading ..."));
+                                    onGoingProgress.Report(Tuple.Create(dgvr, evnt));
+                                }
+                            };
+
+                            GetObjectMetadataResponse response = obsClient.DownloadFile(request);
                             onStopProgress.Report(Tuple.Create(dgvr, (int) response.StatusCode));
-                        }
-                    });
+                        });
 
-                    LoadLocalDir();
+                        LoadLocalDir();
 
+                    }
                 }
+            }
+            catch (Exception exception) {
+                MessageBox.Show(exception.Message, "Download Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
