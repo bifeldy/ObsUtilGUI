@@ -115,8 +115,6 @@ namespace ObsUtilGUI {
                 int statusCode = obj.Item2;
 
                 if (statusCode >= 200 && statusCode < 300) {
-                    string filePath = dgvr.Cells[dgOnProgress.Columns["dgOnProgress_FileLocal"].Index].Value.ToString();
-
                     dgSuccess.Rows.Add(
                         dgvr.Cells[dgOnProgress.Columns["dgOnProgress_FileLocal"].Index].Value,
                         dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Direction"].Index].Value,
@@ -125,22 +123,6 @@ namespace ObsUtilGUI {
                         "Completed ..."
                     );
                     dgOnProgress.Rows.Remove(dgvr);
-
-                    DialogResult dialogResult =
-                        cbDeleteOnComplete.Checked ?
-                            DialogResult.Yes :
-                                MessageBox.Show(
-                                    $"Delete File '{filePath}'",
-                                    "Upload Finished",
-                                    MessageBoxButtons.YesNo,
-                                    MessageBoxIcon.Question
-                                );
-                    if (dialogResult == DialogResult.Yes) {
-                        FileInfo fi = new FileInfo(filePath);
-                        if (fi.Exists) {
-                            fi.Delete();
-                        }
-                    }
                 }
                 else {
                     dgErrorFail.Rows.Add(
@@ -690,9 +672,9 @@ namespace ObsUtilGUI {
                         }
                     }
 
+                    FileInfo fi = new FileInfo(selectedLocalPath);
                     string signFull = ConfigurationManager.AppSettings["local_allowed_file_sign"] ?? string.Empty;
                     if (!string.IsNullOrEmpty(signFull)) {
-                        FileInfo fi = new FileInfo(selectedLocalPath);
                         string[] signSplit = signFull.Split(' ');
                         int minFileSize = signSplit.Length;
                         if (fi.Length < minFileSize) {
@@ -771,7 +753,26 @@ namespace ObsUtilGUI {
                                 };
 
                                 CompleteMultipartUploadResponse response = obsClient.UploadFile(request);
-                                onStopProgress.Report(Tuple.Create(dgvr, (int) response.StatusCode));
+
+                                int statusCode = (int) response.StatusCode;
+                                onStopProgress.Report(Tuple.Create(dgvr, statusCode));
+
+                                if (statusCode >= 200 && statusCode < 300) {
+                                    dialogResult =
+                                        cbDeleteOnComplete.Checked ?
+                                            DialogResult.Yes :
+                                                MessageBox.Show(
+                                                    $"Delete File '{fi.FullName}'",
+                                                    "Upload Finished",
+                                                    MessageBoxButtons.YesNo,
+                                                    MessageBoxIcon.Question
+                                                );
+                                    if (dialogResult == DialogResult.Yes) {
+                                        if (fi.Exists) {
+                                            fi.Delete();
+                                        }
+                                    }
+                                }
                             }
                             catch (ObsException ex) {
                                 MessageBox.Show(ex.Message, "Upload Chunk Part", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -780,6 +781,8 @@ namespace ObsUtilGUI {
 
                     }
                 }
+
+                LoadLocalDir();
             }
             catch (Exception exception) {
                 MessageBox.Show(exception.Message, "Upload Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -826,10 +829,10 @@ namespace ObsUtilGUI {
                             onStopProgress.Report(Tuple.Create(dgvr, (int) response.StatusCode));
                         });
 
-                        LoadLocalDir();
-
                     }
                 }
+
+                LoadLocalDir();
             }
             catch (Exception exception) {
                 MessageBox.Show(exception.Message, "Download Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
