@@ -115,6 +115,8 @@ namespace ObsUtilGUI {
                 int statusCode = obj.Item2;
 
                 if (statusCode >= 200 && statusCode < 300) {
+                    string filePath = dgvr.Cells[dgOnProgress.Columns["dgOnProgress_FileLocal"].Index].Value.ToString();
+
                     dgSuccess.Rows.Add(
                         dgvr.Cells[dgOnProgress.Columns["dgOnProgress_FileLocal"].Index].Value,
                         dgvr.Cells[dgOnProgress.Columns["dgOnProgress_Direction"].Index].Value,
@@ -123,6 +125,22 @@ namespace ObsUtilGUI {
                         "Completed ..."
                     );
                     dgOnProgress.Rows.Remove(dgvr);
+
+                    DialogResult dialogResult =
+                        cbDeleteOnComplete.Checked ?
+                            DialogResult.Yes :
+                                MessageBox.Show(
+                                    $"Delete File '{filePath}'",
+                                    "Upload Finished",
+                                    MessageBoxButtons.YesNo,
+                                    MessageBoxIcon.Question
+                                );
+                    if (dialogResult == DialogResult.Yes) {
+                        FileInfo fi = new FileInfo(filePath);
+                        if (fi.Exists) {
+                            fi.Delete();
+                        }
+                    }
                 }
                 else {
                     dgErrorFail.Rows.Add(

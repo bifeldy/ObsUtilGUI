@@ -72,6 +72,7 @@ namespace ObsUtilGUI {
             this.lblDate = new System.Windows.Forms.Label();
             this.lblTime = new System.Windows.Forms.Label();
             this.lblRefresh = new System.Windows.Forms.Label();
+            this.cbDeleteOnComplete = new System.Windows.Forms.CheckBox();
             this.grpCredential.SuspendLayout();
             this.tableLayoutPanel1.SuspendLayout();
             this.tableLayoutPanel7.SuspendLayout();
@@ -227,6 +228,7 @@ namespace ObsUtilGUI {
             this.tableLayoutPanel1.Controls.Add(this.lvLocalDir, 0, 2);
             this.tableLayoutPanel1.Controls.Add(this.tableLayoutPanel2, 1, 2);
             this.tableLayoutPanel1.Controls.Add(this.lvRemoteDir, 2, 2);
+            this.tableLayoutPanel1.Controls.Add(this.cbDeleteOnComplete, 0, 3);
             this.tableLayoutPanel1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tableLayoutPanel1.Location = new System.Drawing.Point(3, 3);
             this.tableLayoutPanel1.Name = "tableLayoutPanel1";
@@ -661,6 +663,17 @@ namespace ObsUtilGUI {
             this.lblRefresh.Text = "Last Refresh";
             this.lblRefresh.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
+            // cbDeleteOnComplete
+            // 
+            this.cbDeleteOnComplete.AutoSize = true;
+            this.cbDeleteOnComplete.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.cbDeleteOnComplete.Location = new System.Drawing.Point(3, 221);
+            this.cbDeleteOnComplete.Name = "cbDeleteOnComplete";
+            this.cbDeleteOnComplete.Size = new System.Drawing.Size(352, 30);
+            this.cbDeleteOnComplete.TabIndex = 9;
+            this.cbDeleteOnComplete.Text = "Automatically Delete Local File When Upload Completed";
+            this.cbDeleteOnComplete.UseVisualStyleBackColor = true;
+            // 
             // WinMain
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
@@ -681,6 +694,7 @@ namespace ObsUtilGUI {
             this.grpCredential.ResumeLayout(false);
             this.grpCredential.PerformLayout();
             this.tableLayoutPanel1.ResumeLayout(false);
+            this.tableLayoutPanel1.PerformLayout();
             this.tableLayoutPanel7.ResumeLayout(false);
             this.tableLayoutPanel6.ResumeLayout(false);
             this.tableLayoutPanel6.PerformLayout();
@@ -751,6 +765,7 @@ namespace ObsUtilGUI {
         private System.Windows.Forms.Label lblDate;
         private System.Windows.Forms.Label lblTime;
         private System.Windows.Forms.Label lblRefresh;
+        private System.Windows.Forms.CheckBox cbDeleteOnComplete;
     }
 
 }
